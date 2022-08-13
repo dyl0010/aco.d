@@ -1,0 +1,102 @@
+module example.extractaco;
+
+import std.stdio;
+import std.algorithm;
+import std.array;
+import std.getopt;
+
+import arsd.png;
+import ps.aco;
+
+immutable helpString = q"HELP
+Usage:
+    extractaco --png=../path/to/yourimage.png [option]
+        extracting aco swatches from png images
+
+Options:
+    -p, --png=../path/to/yourimage.png
+        Target png image.
+    -f, --freq=integer
+        The frequency of colours will form an internal ranking, 
+        where it is specified how many top colours will be output.
+    --help
+        Show this help information and exit.
+
+<https://github.com/dyl0010/aco.d>  
+HELP";
+
+int main(string[] args) {
+
+    string pngfile;
+    int freq = 10;
+
+    GetoptResult opt;
+
+    try {
+        opt = getopt(args,
+            std.getopt.config.required,
+            "png|p", &pngfile,
+            "freq|f", &freq
+        );
+    } catch (Exception ex) {
+        stderr.writeln("usage: extractaco yourimagefile.png [option]");
+        stderr.writeln("try 'extraceaco --help' for more information.");
+        return 1;
+    }
+
+    if (opt.helpWanted) {
+        write(helpString);
+        return 0;
+    }
+
+    //
+    // count pixels color information.
+    //
+
+    int[Color] colors;
+
+    try {
+        auto img = readPng(pngfile);
+        for (auto x = 0; x < img.width; ++x) {
+            for (auto y = 0; y < img.height; ++y) {
+                ++colors[img.getPixel(x, y)];
+            }
+        }
+    } catch(Exception ex) {
+        stderr.writeln("Invalid png file!");
+        return 1;
+    }
+
+    auto ranks = colors.values.sort!"a>b".array;
+
+    //
+    // prepare to export .aco file.
+    //
+
+    auto aco = acoFactory();
+
+    import std.format;
+ 
+    foreach (i; 0..freq) {
+        foreach (immutable color, ref count; colors) {
+            if (i < ranks.length && count == ranks[i] && color.a == 255) {
+                aco.addColor(AcoColor(rgb_(color.r, color.g, color.b), format("freq%s"w, count)));
+                count = -1;
+                break;
+            }
+        }
+    }
+
+    debug {
+        ACO.dumpDataAsciiArt(aco.toBinary);
+        aco.toCsv.writeln;
+        aco.toJson.writeln;
+    }
+
+    import std.file;
+    import std.path;
+
+    write(format("%s.aco", pngfile.baseName), aco.toBinary);
+
+    return 0;
+}
